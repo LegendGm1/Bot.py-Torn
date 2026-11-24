@@ -5,8 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from utils import sharing, storage, theme, torn_api
-
-PROFILE_URL = "https://www.torn.com/profiles.php?XID={}"
+from utils.format import profile_url
 
 
 class Verify(commands.Cog):
@@ -58,7 +57,7 @@ class Verify(commands.Cog):
 
         embed = theme.success_embed(
             "Verified",
-            f"You are officially linked to **[Torn ID {found_torn_id}]({PROFILE_URL.format(found_torn_id)})**.",
+            f"You are officially linked to **[Torn ID {found_torn_id}]({profile_url(found_torn_id)})**.",
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.add_field(name="💬 Discord", value=interaction.user.mention)
@@ -85,7 +84,7 @@ class Verify(commands.Cog):
             found_torn_id, _ = link
             embed = theme.success_embed(
                 "Verified",
-                f"{member.mention} is linked to **[Torn ID {found_torn_id}]({PROFILE_URL.format(found_torn_id)})**.",
+                f"{member.mention} is linked to **[Torn ID {found_torn_id}]({profile_url(found_torn_id)})**.",
             )
             embed.add_field(name="🆔 Torn ID", value=str(found_torn_id))
 
