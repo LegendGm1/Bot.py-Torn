@@ -18,3 +18,7 @@ def format_duration(seconds, zero_text="Ready") -> str:
     if not parts:
         parts.append(f"{secs}s")
     return " ".join(parts)
+
+
+def profile_url(torn_id) -> str:
+    return f"https://www.torn.com/profiles.php?XID={torn_id}"
