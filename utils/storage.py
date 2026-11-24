@@ -12,7 +12,8 @@ def _now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _save():
+def save():
+    """Save everything. Also used after changing a stored item in place (for example a reminder's timer)."""
     # Write to a temp file first, then swap it in, so a crash can't leave half a file
     tmp_file = DATA_FILE + ".tmp"
     with open(tmp_file, "w", encoding="utf-8") as f:
@@ -20,9 +21,7 @@ def _save():
     os.replace(tmp_file, DATA_FILE)
 
 
-def save():
-    """Save after changing a stored item in place (for example a reminder's timer)."""
-    _save()
+_save = save  # the short name the rest of this file (and /testall) uses
 
 
 def init():
@@ -90,6 +89,10 @@ def add_reminder(reminder: dict):
     _drop_reminders(reminder["discord_id"], reminder["kind"])
     _data["reminders"].append(reminder)
     _save()
+
+
+def reminders_of(discord_id: int) -> list:
+    return [r for r in _data["reminders"] if r["discord_id"] == discord_id]
 
 
 def reminders_of_kind(kind: str) -> list:
