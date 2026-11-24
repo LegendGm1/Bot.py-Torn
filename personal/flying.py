@@ -13,7 +13,7 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 
-from utils import storage, theme, torn_api, users
+from utils import notify, storage, theme, torn_api, users
 
 YATA_URL = "https://yata.yt/api/v1/travel/export/"  # exactly this URL: YATA caches it, extra parameters break that
 JAPAN = "jap"
@@ -151,30 +151,16 @@ class Flying(commands.Cog):
             basic = await torn_api.request("user/", "basic", key=key, fresh=True)
             if not is_in_japan(basic):
                 return  # restock happened, but they are not landed in Japan
-        except torn_api.TornAPIError as e:
-            if e.code in torn_api.BAD_KEY_CODES:
-                storage.delete_key(discord_id)  # also removes their reminders
-                await self.dm(discord_id, theme.error_embed(
-                    "Reminders cancelled",
-                    "Your saved API key is no longer valid, so I removed it and your reminders.\n"
-                    "Use **/setkey** to save a new key, then set them again.",
-                ))
+        except Exception as e:
+            if isinstance(e, torn_api.TornAPIError) and e.code in torn_api.BAD_KEY_CODES:
+                await notify.drop_bad_key(self.bot, discord_id, "set them again.")
                 return
-            note = "I couldn't check where you are, so I'm telling you just in case."
-        except Exception:
             note = "I couldn't check where you are, so I'm telling you just in case."
 
         if note:
             embed = embed.copy()
             embed.set_footer(text=note)
-        await self.dm(discord_id, embed)
-
-    async def dm(self, discord_id: int, embed: discord.Embed):
-        try:
-            user = self.bot.get_user(discord_id) or await self.bot.fetch_user(discord_id)
-            await user.send(embed=embed)
-        except discord.HTTPException as e:  # includes Forbidden (their DMs are closed)
-            print(f"Could not DM {discord_id}: {e}")
+        await notify.send_dm(self.bot, discord_id, embed)
 
     # ------------------------------------------------------------------
     # Turning it on (called by /reminder with the "Flying" purpose)
