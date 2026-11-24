@@ -47,8 +47,12 @@ def is_restock(previous: int, current: int) -> bool:
 
 
 def is_in_japan(basic: dict) -> bool:
+    """True when the player is in Japan: landed there, or in a Japanese hospital (for example after
+    self-hospitalizing abroad to avoid a mug, where Torn says "In a Japanese hospital for ...")."""
     status = basic.get("status", {})
-    return status.get("state") == "Abroad" and "japan" in (status.get("description") or "").lower()
+    state = status.get("state")
+    description = (status.get("description") or "").lower()
+    return state in ("Abroad", "Hospital") and "japan" in description  # "japan" also matches "Japanese"
 
 
 class Flying(commands.Cog):
@@ -185,7 +189,9 @@ class Flying(commands.Cog):
 
         lines = ["✈️💊 I'll message you when Xanax is **restocked in Japan** while you are landed there."]
         if is_in_japan(data):
-            lines.append("🇯🇵 You're in Japan right now.")
+            in_hospital = (data.get("status") or {}).get("state") == "Hospital"
+            lines.append("🇯🇵 You're in Japan right now (in a Japanese hospital)." if in_hospital
+                         else "🇯🇵 You're in Japan right now.")
         else:
             lines.append("📍 You're not in Japan yet. I'll only message you once you've landed there.")
 
