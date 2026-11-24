@@ -5,8 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from utils import sharing, theme, torn_api, users
-
-PROFILE_URL = "https://www.torn.com/profiles.php?XID={}"
+from utils.format import profile_url
 
 # status state -> (icon, embed color)
 STATE_STYLE = {
@@ -70,7 +69,7 @@ class Profile(commands.Cog):
             f"👤 {data.get('name')} [{data.get('player_id')}]",
             f"{icon} **{status.get('description', 'Unknown')}**",
             color,
-            url=PROFILE_URL.format(data.get("player_id")),
+            url=profile_url(data.get("player_id")),
         )
         embed.add_field(name="🏆 Level", value=str(data.get("level", "?")))
         embed.add_field(name="🎖️ Rank", value=str(data.get("rank", "?")))
