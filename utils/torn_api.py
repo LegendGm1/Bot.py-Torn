@@ -9,6 +9,24 @@ BASE_URL = "https://api.torn.com"
 BAD_KEY_CODES = {2, 13, 18}
 
 
+_session = None  # one shared session, so connections to Torn are reused instead of rebuilt every request
+
+
+def _get_session() -> aiohttp.ClientSession:
+    global _session
+    if _session is None or _session.closed:
+        _session = aiohttp.ClientSession()
+    return _session
+
+
+async def close():
+    """Close the shared session (called when the bot shuts down)."""
+    global _session
+    if _session is not None and not _session.closed:
+        await _session.close()
+    _session = None
+
+
 class TornAPIError(Exception):
     def __init__(self, code, message):
         super().__init__(message)
@@ -31,9 +49,8 @@ async def request(path: str, selections: str, key: str | None = None, fresh: boo
     if fresh:
         params["timestamp"] = int(time.time())  # a unique request, so the cache is not used
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{BASE_URL}/{path}", params=params) as resp:
-            data = await resp.json(content_type=None)
+    async with _get_session().get(f"{BASE_URL}/{path}", params=params) as resp:
+        data = await resp.json(content_type=None)
 
     if "error" in data:
         error = data["error"]
