@@ -1,10 +1,11 @@
+import asyncio
 import time
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from utils import storage, theme, torn_api, users
+from utils import notify, storage, theme, torn_api, users
 
 TICK_SECONDS = 5        # how often the bot looks for reminders that are due
 POLL_SECONDS = 60       # hospital/jail: how often to check if someone released you early
@@ -30,6 +31,11 @@ def now() -> int:
     return int(time.time())
 
 
+def kinds_for(purpose: str) -> list:
+    """The reminder kinds behind a purpose ("both" means energy and nerve)."""
+    return ["energy", "nerve"] if purpose == "both" else [purpose]
+
+
 def make_reminder(discord_id: int, kind: str, due: int, **extra) -> dict:
     reminder = {"discord_id": discord_id, "kind": kind, "due": due, "next_check": due, "fails": 0}
     reminder.update(extra)
@@ -52,12 +58,17 @@ class Reminders(commands.Cog):
 
     @tasks.loop(seconds=TICK_SECONDS)
     async def check_reminders(self):
-        for reminder in storage.due_reminders(now()):
-            try:
-                await self.process(reminder)
-            except Exception as e:  # one broken reminder must never stop the loop
-                print(f"Reminder error ({reminder.get('kind')}): {type(e).__name__}: {e}")
-                reminder["next_check"] = now() + RETRY_SECONDS
+        due = storage.due_reminders(now())
+        if due:
+            # Everything that is due runs at the same time, so one slow Torn answer doesn't hold up the rest
+            await asyncio.gather(*(self.run_one(reminder) for reminder in due))
+
+    async def run_one(self, reminder: dict):
+        try:
+            await self.process(reminder)
+        except Exception as e:  # one broken reminder must never stop the loop
+            print(f"Reminder error ({reminder.get('kind')}): {type(e).__name__}: {e}")
+            reminder["next_check"] = now() + RETRY_SECONDS
 
     @check_reminders.before_loop
     async def before_check_reminders(self):
@@ -155,12 +166,7 @@ class Reminders(commands.Cog):
             data = await torn_api.request("user/", selections, key=key)
         except torn_api.TornAPIError as e:
             if e.code in torn_api.BAD_KEY_CODES:
-                storage.delete_key(r["discord_id"])  # also removes their reminders
-                await self.dm(r["discord_id"], theme.error_embed(
-                    "Reminders cancelled",
-                    "Your saved API key is no longer valid, so I removed it and your reminders.\n"
-                    "Use **/setkey** to save a new key, then set your reminders again.",
-                ))
+                await notify.drop_bad_key(self.bot, r["discord_id"], "set your reminders again.")
                 return None
             await self.failed(r, f"Torn error {e.code}: {e.message}")
             return None
@@ -175,7 +181,7 @@ class Reminders(commands.Cog):
         r["fails"] = r.get("fails", 0) + 1
         if r["fails"] >= MAX_FAILURES:
             if storage.remove_reminder(r):
-                await self.dm(r["discord_id"], theme.error_embed(
+                await notify.send_dm(self.bot, r["discord_id"], theme.error_embed(
                     "Reminder cancelled",
                     f"I couldn't reach Torn {MAX_FAILURES} times in a row ({why}), so I cancelled it. Please set it again.",
                 ))
@@ -186,14 +192,7 @@ class Reminders(commands.Cog):
     async def notify(self, r: dict, embed: discord.Embed):
         # Remove first: if it was cancelled while we were busy, remove_reminder says so and we stay quiet
         if storage.remove_reminder(r):
-            await self.dm(r["discord_id"], embed)
-
-    async def dm(self, discord_id: int, embed: discord.Embed):
-        try:
-            user = self.bot.get_user(discord_id) or await self.bot.fetch_user(discord_id)
-            await user.send(embed=embed)
-        except discord.HTTPException as e:  # includes Forbidden (their DMs are closed)
-            print(f"Could not DM {discord_id}: {e}")
+            await notify.send_dm(self.bot, r["discord_id"], embed)
 
     # ------------------------------------------------------------------
     # The commands
@@ -271,9 +270,8 @@ class Reminders(commands.Cog):
         if data is None:
             return
 
-        kinds = ["energy", "nerve"] if bar == "both" else [bar]
         reminders, lines = [], []
-        for kind in kinds:
+        for kind in kinds_for(bar):
             icon, label = BARS[kind]
             seconds = int(data.get(kind, {}).get("fulltime") or 0)
             if seconds <= 0:
@@ -364,8 +362,7 @@ class Reminders(commands.Cog):
         if which is None:
             count = storage.delete_user_reminders(interaction.user.id)
         else:
-            kinds = ["energy", "nerve"] if which == "both" else [which]
-            count = sum(storage.delete_user_reminders(interaction.user.id, kind) for kind in kinds)
+            count = sum(storage.delete_user_reminders(interaction.user.id, kind) for kind in kinds_for(which))
 
         if count:
             embed = theme.success_embed(
@@ -376,7 +373,7 @@ class Reminders(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def show_list(self, interaction: discord.Interaction):
-        mine = [r for r in storage._data["reminders"] if r["discord_id"] == interaction.user.id]
+        mine = storage.reminders_of(interaction.user.id)
         if not mine:
             embed = theme.make_embed(
                 "ℹ️ No reminders",
