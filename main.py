@@ -41,7 +41,7 @@ import os
 import discord
 from discord.ext import commands
 
-from utils import storage
+from utils import storage, torn_api
 
 # Read config.txt (lines like NAME=value) into environment variables
 for line in (BASE_DIR / "config.txt").read_text(encoding="utf-8-sig").splitlines():
@@ -70,6 +70,10 @@ class TornBot(commands.Bot):
                 await self.load_extension(f"{folder}.{file.stem}")
                 print(f"Loaded {folder}/{file.name}")
         await self.tree.sync()  # registers slash commands with Discord
+
+    async def close(self):
+        await torn_api.close()
+        await super().close()
 
     async def on_ready(self):
         print(f"Logged in as {self.user}")
